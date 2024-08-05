@@ -12,98 +12,216 @@
  */
 
 // Add menu item under Tools
-function mcd_add_menu_item()
+function emcd_add_menu_item()
 {
     add_submenu_page(
         'tools.php',
-        'Mass Content Deleter',
-        'Mass Content Deleter',
+        'WP-Clean',
+        'WP-Clean',
         'manage_options',
-        'mass-content-deleter',
-        'mcd_admin_page'
+        'WP-Clean',
+        'emcd_admin_page'
     );
 }
-add_action('admin_menu', 'mcd_add_menu_item');
+add_action('admin_menu', 'emcd_add_menu_item');
 
 // Admin page content
-function mcd_admin_page()
+function emcd_admin_page()
 {
 ?>
     <div class="wrap">
-        <h1>Mass Content Deleter</h1>
-        <form method="post" action="">
-            <?php wp_nonce_field('mcd_delete_action', 'mcd_nonce'); ?>
-            <p>Select the content types you want to delete:</p>
-            <label><input type="checkbox" name="delete_posts" value="1"> Posts</label><br>
-            <label><input type="checkbox" name="delete_pages" value="1"> Pages</label><br>
-            <label><input type="checkbox" name="delete_comments" value="1"> Comments</label><br>
-            <label><input type="checkbox" name="delete_users" value="1"> Users (except admin)</label><br>
-            <label><input type="checkbox" name="delete_terms" value="1"> Terms (categories, tags)</label><br>
-            <input type="submit" name="mcd_submit" class="button button-primary" value="Delete Selected Content">
-        </form>
-        <div id="mcd-loader" style="display: none;">
-            <p>Deleting content... Please wait.</p>
-            <div class="spinner is-active"></div>
+        <h1>WP Clean</h1>
+        <div id="emcd-main-form">
+            <form method="post" action="" id="emcd-form">
+                <?php wp_nonce_field('emcd_delete_action', 'emcd_nonce'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">WordPress Content</th>
+                        <td>
+                            <label><input type="checkbox" name="delete_posts" value="1"> Posts</label><br>
+                            <label><input type="checkbox" name="delete_pages" value="1"> Pages</label><br>
+                            <label><input type="checkbox" name="delete_comments" value="1"> Comments</label><br>
+                            <label><input type="checkbox" name="delete_users" value="1"> Users (except admin)</label><br>
+                            <label><input type="checkbox" name="delete_terms" value="1"> Terms (categories, tags)</label><br>
+                        </td>
+                    </tr>
+                    <?php if (class_exists('WooCommerce')) : ?>
+                        <tr>
+                            <th scope="row">WooCommerce Content</th>
+                            <td>
+                                <label><input type="checkbox" name="delete_products" value="1"> Products</label><br>
+                                <label><input type="checkbox" name="delete_orders" value="1"> Orders</label><br>
+                                <label><input type="checkbox" name="delete_coupons" value="1"> Coupons</label><br>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </table>
+                <p class="submit">
+                    <input type="submit" name="emcd_submit" id="emcd-submit" class="button button-primary" value="Delete Selected Content">
+                </p>
+            </form>
+        </div>
+        <div id="emcd-progress" style="display: none;">
+            <h2>Deletion Progress</h2>
+            <div id="emcd-progress-bar">
+                <div id="emcd-progress-bar-inner"></div>
+            </div>
+            <p id="emcd-progress-text"></p>
         </div>
     </div>
+    <style>
+        #emcd-progress-bar {
+            width: 100%;
+            background-color: #f0f0f0;
+            padding: 3px;
+            border-radius: 3px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+        }
+
+        #emcd-progress-bar-inner {
+            width: 0;
+            height: 20px;
+            background-color: #0073aa;
+            border-radius: 3px;
+            transition: width 0.5s ease-in-out;
+        }
+    </style>
     <script>
         jQuery(document).ready(function($) {
-            $('form').on('submit', function() {
-                $('#mcd-loader').show();
+            $('#emcd-form').on('submit', function(e) {
+                e.preventDefault();
+                if (!confirm('Are you sure you want to delete the selected content? This action cannot be undone.')) {
+                    return;
+                }
+                $('#emcd-main-form').hide();
+                $('#emcd-progress').show();
+                processDelete();
             });
+
+            function processDelete() {
+                var data = $('#emcd-form').serialize();
+                data += '&action=emcd_process_deletion';
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: data,
+                    success: function(response) {
+                        updateProgress(response.progress, response.message);
+                        if (response.progress < 100) {
+                            processDelete();
+                        } else {
+                            $('#emcd-progress-text').html('Deletion completed!');
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        }
+                    },
+                    error: function() {
+                        alert('An error occurred. Please try again.');
+                        $('#emcd-main-form').show();
+                        $('#emcd-progress').hide();
+                    }
+                });
+            }
+
+            function updateProgress(progress, message) {
+                $('#emcd-progress-bar-inner').css('width', progress + '%');
+                $('#emcd-progress-text').html(message);
+            }
         });
     </script>
 <?php
 }
 
-// Process deletion
-function mcd_process_deletion()
+// AJAX handler for deletion process
+function emcd_ajax_process_deletion()
 {
-    if (isset($_POST['mcd_submit']) && check_admin_referer('mcd_delete_action', 'mcd_nonce')) {
-        if (isset($_POST['delete_posts'])) {
-            $posts = get_posts(array('numberposts' => -1));
-            foreach ($posts as $post) {
-                wp_delete_post($post->ID, true);
-            }
-        }
-        if (isset($_POST['delete_pages'])) {
-            $pages = get_pages();
-            foreach ($pages as $page) {
-                wp_delete_post($page->ID, true);
-            }
-        }
-        if (isset($_POST['delete_comments'])) {
-            $comments = get_comments();
-            foreach ($comments as $comment) {
-                wp_delete_comment($comment->comment_ID, true);
-            }
-        }
-        if (isset($_POST['delete_users'])) {
-            $users = get_users(array('role__not_in' => array('administrator')));
-            foreach ($users as $user) {
-                wp_delete_user($user->ID);
-            }
-        }
-        if (isset($_POST['delete_terms'])) {
-            $taxonomies = get_taxonomies();
-            foreach ($taxonomies as $taxonomy) {
-                $terms = get_terms(array('taxonomy' => $taxonomy, 'hide_empty' => false));
-                foreach ($terms as $term) {
-                    wp_delete_term($term->term_id, $taxonomy);
-                }
-            }
-        }
-        add_action('admin_notices', 'mcd_admin_notice');
-    }
-}
-add_action('admin_init', 'mcd_process_deletion');
+    check_ajax_referer('emcd_delete_action', 'emcd_nonce');
 
-// Admin notice for successful deletion
-function mcd_admin_notice()
-{
-?>
-    <div class="notice notice-success is-dismissible">
-        <p>Selected content has been deleted successfully.</p>
-    </div>
-<?php
+    $total_items = 0;
+    $deleted_items = 0;
+
+    if (isset($_POST['delete_posts'])) {
+        $posts = get_posts(array('numberposts' => -1, 'post_type' => 'post'));
+        $total_items += count($posts);
+        foreach ($posts as $post) {
+            wp_delete_post($post->ID, true);
+            $deleted_items++;
+        }
+    }
+
+    if (isset($_POST['delete_pages'])) {
+        $pages = get_pages();
+        $total_items += count($pages);
+        foreach ($pages as $page) {
+            wp_delete_post($page->ID, true);
+            $deleted_items++;
+        }
+    }
+
+    if (isset($_POST['delete_comments'])) {
+        $comments = get_comments();
+        $total_items += count($comments);
+        foreach ($comments as $comment) {
+            wp_delete_comment($comment->comment_ID, true);
+            $deleted_items++;
+        }
+    }
+
+    if (isset($_POST['delete_users'])) {
+        $users = get_users(array('role__not_in' => array('administrator')));
+        $total_items += count($users);
+        foreach ($users as $user) {
+            wp_delete_user($user->ID);
+            $deleted_items++;
+        }
+    }
+
+    if (isset($_POST['delete_terms'])) {
+        $taxonomies = get_taxonomies();
+        foreach ($taxonomies as $taxonomy) {
+            $terms = get_terms(array('taxonomy' => $taxonomy, 'hide_empty' => false));
+            $total_items += count($terms);
+            foreach ($terms as $term) {
+                wp_delete_term($term->term_id, $taxonomy);
+                $deleted_items++;
+            }
+        }
+    }
+
+    if (class_exists('WooCommerce')) {
+        if (isset($_POST['delete_products'])) {
+            $products = wc_get_products(array('limit' => -1));
+            $total_items += count($products);
+            foreach ($products as $product) {
+                $product->delete(true);
+                $deleted_items++;
+            }
+        }
+
+        if (isset($_POST['delete_orders'])) {
+            $orders = wc_get_orders(array('limit' => -1));
+            $total_items += count($orders);
+            foreach ($orders as $order) {
+                $order->delete(true);
+                $deleted_items++;
+            }
+        }
+
+        if (isset($_POST['delete_coupons'])) {
+            $coupons = get_posts(array('post_type' => 'shop_coupon', 'numberposts' => -1));
+            $total_items += count($coupons);
+            foreach ($coupons as $coupon) {
+                wp_delete_post($coupon->ID, true);
+                $deleted_items++;
+            }
+        }
+    }
+
+    $progress = ($total_items > 0) ? round(($deleted_items / $total_items) * 100) : 100;
+    $message = "Deleted $deleted_items out of $total_items items";
+
+    wp_send_json(array('progress' => $progress, 'message' => $message));
 }
+add_action('wp_ajax_emcd_process_deletion', 'emcd_ajax_process_deletion');
