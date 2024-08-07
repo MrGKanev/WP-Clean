@@ -224,8 +224,142 @@ function amcd_ajax_process_deletion()
         }
     }
 
-    // Process other content types (comments, users, terms, etc.)
-    // ... (implement similar batch processing for other content types)
+    // Process comments
+    if (isset($_POST['delete_comments'])) {
+        $args = array(
+            'number' => $batch_size,
+            'status' => 'any',
+        );
+        if (!empty($_POST['date_from'])) {
+            $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
+        }
+        if (!empty($_POST['date_to'])) {
+            $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
+        }
+        $comments = get_comments($args);
+        foreach ($comments as $comment) {
+            wp_delete_comment($comment->comment_ID, true);
+            $deleted_items++;
+            amcd_log_deletion('comment', $comment->comment_ID);
+        }
+    }
+
+    // Process users
+    if (isset($_POST['delete_users'])) {
+        $args = array(
+            'number' => $batch_size,
+            'role__not_in' => array('administrator'),
+        );
+        $users = get_users($args);
+        foreach ($users as $user) {
+            wp_delete_user($user->ID);
+            $deleted_items++;
+            amcd_log_deletion('user', $user->ID);
+        }
+    }
+
+    // Process terms (categories, tags)
+    if (isset($_POST['delete_terms'])) {
+        $taxonomies = get_taxonomies();
+        foreach ($taxonomies as $taxonomy) {
+            $args = array(
+                'taxonomy' => $taxonomy,
+                'hide_empty' => false,
+                'number' => $batch_size,
+            );
+            $terms = get_terms($args);
+            foreach ($terms as $term) {
+                wp_delete_term($term->term_id, $taxonomy);
+                $deleted_items++;
+                amcd_log_deletion('term', $term->term_id);
+            }
+        }
+    }
+
+    // Process media
+    if (isset($_POST['delete_media'])) {
+        $args = array(
+            'post_type' => 'attachment',
+            'posts_per_page' => $batch_size,
+            'post_status' => 'any',
+        );
+        if (!empty($_POST['date_from'])) {
+            $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
+        }
+        if (!empty($_POST['date_to'])) {
+            $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
+        }
+        $attachments = get_posts($args);
+        foreach ($attachments as $attachment) {
+            wp_delete_attachment($attachment->ID, true);
+            $deleted_items++;
+            amcd_log_deletion('attachment', $attachment->ID);
+        }
+    }
+
+    // Process WooCommerce content
+    if (class_exists('WooCommerce')) {
+        // Process products
+        if (isset($_POST['delete_products'])) {
+            $args = array(
+                'status' => array('publish', 'pending', 'draft', 'auto-draft', 'future', 'private', 'inherit', 'trash'),
+                'limit' => $batch_size,
+            );
+            if (!empty($_POST['date_from'])) {
+                $args['date_created'] = '>' . sanitize_text_field($_POST['date_from']);
+            }
+            if (!empty($_POST['date_to'])) {
+                $args['date_created'] = '<' . sanitize_text_field($_POST['date_to']);
+            }
+            $products = wc_get_products($args);
+            foreach ($products as $product) {
+                $product->delete(true);
+                $deleted_items++;
+                amcd_log_deletion('product', $product->get_id());
+            }
+        }
+
+        // Process orders
+        if (isset($_POST['delete_orders'])) {
+            $args = array(
+                'limit' => $batch_size,
+                'status' => array_keys(wc_get_order_statuses()),
+            );
+            if (!empty($_POST['date_from'])) {
+                $args['date_created'] = '>' . sanitize_text_field($_POST['date_from']);
+            }
+            if (!empty($_POST['date_to'])) {
+                $args['date_created'] = '<' . sanitize_text_field($_POST['date_to']);
+            }
+            $orders = wc_get_orders($args);
+            foreach ($orders as $order) {
+                $order->delete(true);
+                $deleted_items++;
+                amcd_log_deletion('order', $order->get_id());
+            }
+        }
+
+        // Process coupons
+        if (isset($_POST['delete_coupons'])) {
+            $args = array(
+                'posts_per_page' => $batch_size,
+                'post_type' => 'shop_coupon',
+                'post_status' => 'any',
+            );
+            if (!empty($_POST['date_from'])) {
+                $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
+            }
+            if (!empty($_POST['date_to'])) {
+                $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
+            }
+            $coupons = get_posts($args);
+            foreach ($coupons as $coupon) {
+                wp_delete_post($coupon->ID, true);
+                $deleted_items++;
+                amcd_log_deletion('coupon', $coupon->ID);
+            }
+        }
+    }
 
     $progress = ($total_items > 0) ? round(($deleted_items / $total_items) * 100) : 100;
     $message = "Deleted $deleted_items out of $total_items items";
@@ -237,8 +371,53 @@ add_action('wp_ajax_amcd_process_deletion', 'amcd_ajax_process_deletion');
 // Function to get total items to be deleted
 function amcd_get_total_items()
 {
-    // Implement logic to count all items that will be deleted based on form input
-    // Return the total count
+    $total = 0;
+
+    // Count posts (including custom post types)
+    $post_types = get_post_types(array('public' => true));
+    foreach ($post_types as $post_type) {
+        if (isset($_POST["delete_{$post_type}"]) || isset($_POST["delete_cpt_{$post_type}"])) {
+            $total += wp_count_posts($post_type)->publish;
+        }
+    }
+
+    // Count comments
+    if (isset($_POST['delete_comments'])) {
+        $total += wp_count_comments()->total_comments;
+    }
+
+    // Count users
+    if (isset($_POST['delete_users'])) {
+        $total += count_users()['total_users'] - 1; // Subtract 1 for admin
+    }
+
+    // Count terms
+    if (isset($_POST['delete_terms'])) {
+        $taxonomies = get_taxonomies();
+        foreach ($taxonomies as $taxonomy) {
+            $total += wp_count_terms($taxonomy);
+        }
+    }
+
+    // Count media
+    if (isset($_POST['delete_media'])) {
+        $total += wp_count_posts('attachment')->inherit;
+    }
+
+    // Count WooCommerce items
+    if (class_exists('WooCommerce')) {
+        if (isset($_POST['delete_products'])) {
+            $total += wp_count_posts('product')->publish;
+        }
+        if (isset($_POST['delete_orders'])) {
+            $total += wp_count_posts('shop_order')->publish;
+        }
+        if (isset($_POST['delete_coupons'])) {
+            $total += wp_count_posts('shop_coupon')->publish;
+        }
+    }
+
+    return $total;
 }
 
 // Function to log deletions
