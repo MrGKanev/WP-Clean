@@ -2,8 +2,8 @@
 /*
  * Plugin Name: WP-Clean
  * Plugin URI: https://github.com/MrGKanev/wp-clean/
- * Description: s
- * Version: 0.0.1
+ * Description: A plugin to clean up WordPress content and optimize the database.
+ * Version: 1.0.0
  * Author: Gabriel Kanev
  * Author URI: https://gkanev.com
  * License: MIT
@@ -28,7 +28,10 @@ add_action('admin_menu', 'amcd_add_menu_item');
 // Admin page content
 function amcd_admin_page()
 {
-?>
+    if (!current_user_can('manage_options')) {
+        wp_die('You do not have sufficient permissions to access this page.');
+    }
+    ?>
     <div class="wrap">
         <h1>WP-Clean</h1>
         <div id="amcd-main-form">
@@ -74,6 +77,13 @@ function amcd_admin_page()
                             <label>To: <input type="date" name="date_to"></label>
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row">Schedule Deletion (optional)</th>
+                        <td>
+                            <label>Date: <input type="date" name="scheduled_date"></label>
+                            <label>Time: <input type="time" name="scheduled_time"></label>
+                        </td>
+                    </tr>
                 </table>
                 <p class="submit">
                     <input type="submit" name="amcd_submit" id="amcd-submit" class="button button-primary" value="Delete Selected Content">
@@ -110,17 +120,18 @@ function amcd_admin_page()
         jQuery(document).ready(function($) {
             $('#amcd-form').on('submit', function(e) {
                 e.preventDefault();
-                if (!confirm('Are you sure you want to delete the selected content? This action cannot be undone.')) {
-                    return;
+                if ($('#amcd-submit').is(':focus')) {
+                    if (!confirm('Are you sure you want to delete the selected content? This action cannot be undone.')) {
+                        return;
+                    }
                 }
                 $('#amcd-main-form').hide();
                 $('#amcd-progress').show();
-                processDelete();
-            });
-
-            $('#amcd-export').on('click', function(e) {
-                e.preventDefault();
-                exportData();
+                if ($('#amcd-submit').is(':focus')) {
+                    processDelete();
+                } else if ($('#amcd-export').is(':focus')) {
+                    exportData();
+                }
             });
 
             function processDelete() {
@@ -188,55 +199,105 @@ function amcd_admin_page()
             }
         });
     </script>
-<?php
+    <?php
 }
 
-// AJAX handler for deletion process (update with batch processing)
+// AJAX handler for deletion process
 function amcd_ajax_process_deletion()
 {
     check_ajax_referer('amcd_delete_action', 'amcd_nonce');
 
-    $batch_size = 50; // Adjust based on your needs
-    $deleted_items = 0;
-    $total_items = amcd_get_total_items();
+    $deletion_data = array(
+        'posts' => isset($_POST['delete_posts']),
+        'pages' => isset($_POST['delete_pages']),
+        'comments' => isset($_POST['delete_comments']),
+        'users' => isset($_POST['delete_users']),
+        'terms' => isset($_POST['delete_terms']),
+        'media' => isset($_POST['delete_media']),
+        'products' => isset($_POST['delete_products']),
+        'orders' => isset($_POST['delete_orders']),
+        'coupons' => isset($_POST['delete_coupons']),
+        'cpt' => array(),
+        'date_from' => sanitize_text_field($_POST['date_from'] ?? ''),
+        'date_to' => sanitize_text_field($_POST['date_to'] ?? ''),
+    );
 
-    // Process posts (including custom post types)
-    $post_types = get_post_types(array('public' => true));
-    foreach ($post_types as $post_type) {
-        if (isset($_POST["delete_{$post_type}"]) || isset($_POST["delete_cpt_{$post_type}"])) {
-            $args = array(
-                'post_type' => $post_type,
-                'posts_per_page' => $batch_size,
-                'post_status' => 'any',
-            );
-            if (!empty($_POST['date_from'])) {
-                $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
-            }
-            if (!empty($_POST['date_to'])) {
-                $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
-            }
-            $posts = get_posts($args);
-            foreach ($posts as $post) {
-                wp_delete_post($post->ID, true);
+    $custom_post_types = get_post_types(array('_builtin' => false), 'objects');
+    foreach ($custom_post_types as $pt) {
+        if (isset($_POST["delete_cpt_{$pt->name}"])) {
+            $deletion_data['cpt'][] = $pt->name;
+        }
+    }
+
+    $scheduled_date = sanitize_text_field($_POST['scheduled_date'] ?? '');
+    $scheduled_time = sanitize_text_field($_POST['scheduled_time'] ?? '');
+
+    if (!empty($scheduled_date) && !empty($scheduled_time)) {
+        $timestamp = strtotime($scheduled_date . ' ' . $scheduled_time);
+        amcd_schedule_deletion($timestamp, $deletion_data);
+        wp_send_json_success(array('message' => 'Deletion scheduled.'));
+    } else {
+        amcd_process_deletion($deletion_data);
+    }
+}
+add_action('wp_ajax_amcd_process_deletion', 'amcd_ajax_process_deletion');
+
+// Function to process deletion
+function amcd_process_deletion($data)
+{
+    $deleted_items = 0;
+    $total_items = amcd_get_total_items($data);
+
+    // Process posts
+    if ($data['posts']) {
+        $posts = get_posts(array(
+            'post_type' => 'post',
+            'posts_per_page' => -1,
+            'date_query' => amcd_get_date_query($data),
+        ));
+        foreach ($posts as $post) {
+            wp_delete_post($post->ID, true);
+            $deleted_items++;
+            amcd_log_deletion('post', $post->ID);
+        }
+    }
+
+    // Process pages
+    if ($data['pages']) {
+        $pages = get_posts(array(
+            'post_type' => 'page',
+            'posts_per_page' => -1,
+            'date_query' => amcd_get_date_query($data),
+        ));
+        foreach ($pages as $page) {
+            wp_delete_post($page->ID, true);
+            $deleted_items++;
+            amcd_log_deletion('page', $page->ID);
+        }
+    }
+
+    // Process custom post types
+    if (!empty($data['cpt'])) {
+        foreach ($data['cpt'] as $pt) {
+            $cpt_items = get_posts(array(
+                'post_type' => $pt,
+                'posts_per_page' => -1,
+                'date_query' => amcd_get_date_query($data),
+            ));
+            foreach ($cpt_items as $item) {
+                wp_delete_post($item->ID, true);
                 $deleted_items++;
-                amcd_log_deletion('post', $post->ID);
+                amcd_log_deletion($pt, $item->ID);
             }
         }
     }
 
     // Process comments
-    if (isset($_POST['delete_comments'])) {
-        $args = array(
-            'number' => $batch_size,
-            'status' => 'any',
-        );
-        if (!empty($_POST['date_from'])) {
-            $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
-        }
-        if (!empty($_POST['date_to'])) {
-            $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
-        }
-        $comments = get_comments($args);
+    if ($data['comments']) {
+        $comments = get_comments(array(
+            'status' => 'all',
+            'date_query' => amcd_get_date_query($data),
+        ));
         foreach ($comments as $comment) {
             wp_delete_comment($comment->comment_ID, true);
             $deleted_items++;
@@ -245,12 +306,10 @@ function amcd_ajax_process_deletion()
     }
 
     // Process users
-    if (isset($_POST['delete_users'])) {
-        $args = array(
-            'number' => $batch_size,
+    if ($data['users']) {
+        $users = get_users(array(
             'role__not_in' => array('administrator'),
-        );
-        $users = get_users($args);
+        ));
         foreach ($users as $user) {
             wp_delete_user($user->ID);
             $deleted_items++;
@@ -258,16 +317,14 @@ function amcd_ajax_process_deletion()
         }
     }
 
-    // Process terms (categories, tags)
-    if (isset($_POST['delete_terms'])) {
+    // Process terms
+    if ($data['terms']) {
         $taxonomies = get_taxonomies();
         foreach ($taxonomies as $taxonomy) {
-            $args = array(
+            $terms = get_terms(array(
                 'taxonomy' => $taxonomy,
                 'hide_empty' => false,
-                'number' => $batch_size,
-            );
-            $terms = get_terms($args);
+            ));
             foreach ($terms as $term) {
                 wp_delete_term($term->term_id, $taxonomy);
                 $deleted_items++;
@@ -277,20 +334,13 @@ function amcd_ajax_process_deletion()
     }
 
     // Process media
-    if (isset($_POST['delete_media'])) {
-        $args = array(
+    if ($data['media']) {
+        $media = get_posts(array(
             'post_type' => 'attachment',
-            'posts_per_page' => $batch_size,
-            'post_status' => 'any',
-        );
-        if (!empty($_POST['date_from'])) {
-            $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
-        }
-        if (!empty($_POST['date_to'])) {
-            $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
-        }
-        $attachments = get_posts($args);
-        foreach ($attachments as $attachment) {
+            'posts_per_page' => -1,
+            'date_query' => amcd_get_date_query($data),
+        ));
+        foreach ($media as $attachment) {
             wp_delete_attachment($attachment->ID, true);
             $deleted_items++;
             amcd_log_deletion('attachment', $attachment->ID);
@@ -300,18 +350,11 @@ function amcd_ajax_process_deletion()
     // Process WooCommerce content
     if (class_exists('WooCommerce')) {
         // Process products
-        if (isset($_POST['delete_products'])) {
-            $args = array(
-                'status' => array('publish', 'pending', 'draft', 'auto-draft', 'future', 'private', 'inherit', 'trash'),
-                'limit' => $batch_size,
-            );
-            if (!empty($_POST['date_from'])) {
-                $args['date_created'] = '>' . sanitize_text_field($_POST['date_from']);
-            }
-            if (!empty($_POST['date_to'])) {
-                $args['date_created'] = '<' . sanitize_text_field($_POST['date_to']);
-            }
-            $products = wc_get_products($args);
+        if ($data['products']) {
+            $products = wc_get_products(array(
+                'limit' => -1,
+                'date_created' => amcd_get_date_query($data),
+            ));
             foreach ($products as $product) {
                 $product->delete(true);
                 $deleted_items++;
@@ -320,18 +363,11 @@ function amcd_ajax_process_deletion()
         }
 
         // Process orders
-        if (isset($_POST['delete_orders'])) {
-            $args = array(
-                'limit' => $batch_size,
-                'status' => array_keys(wc_get_order_statuses()),
-            );
-            if (!empty($_POST['date_from'])) {
-                $args['date_created'] = '>' . sanitize_text_field($_POST['date_from']);
-            }
-            if (!empty($_POST['date_to'])) {
-                $args['date_created'] = '<' . sanitize_text_field($_POST['date_to']);
-            }
-            $orders = wc_get_orders($args);
+        if ($data['orders']) {
+            $orders = wc_get_orders(array(
+                'limit' => -1,
+                'date_created' => amcd_get_date_query($data),
+            ));
             foreach ($orders as $order) {
                 $order->delete(true);
                 $deleted_items++;
@@ -340,19 +376,12 @@ function amcd_ajax_process_deletion()
         }
 
         // Process coupons
-        if (isset($_POST['delete_coupons'])) {
-            $args = array(
-                'posts_per_page' => $batch_size,
+        if ($data['coupons']) {
+            $coupons = get_posts(array(
                 'post_type' => 'shop_coupon',
-                'post_status' => 'any',
-            );
-            if (!empty($_POST['date_from'])) {
-                $args['date_query'][0]['after'] = sanitize_text_field($_POST['date_from']);
-            }
-            if (!empty($_POST['date_to'])) {
-                $args['date_query'][0]['before'] = sanitize_text_field($_POST['date_to']);
-            }
-            $coupons = get_posts($args);
+                'posts_per_page' => -1,
+                'date_query' => amcd_get_date_query($data),
+            ));
             foreach ($coupons as $coupon) {
                 wp_delete_post($coupon->ID, true);
                 $deleted_items++;
@@ -366,53 +395,68 @@ function amcd_ajax_process_deletion()
 
     wp_send_json(array('progress' => $progress, 'message' => $message));
 }
-add_action('wp_ajax_amcd_process_deletion', 'amcd_ajax_process_deletion');
+
+// Function to get date query based on user input
+function amcd_get_date_query($data)
+{
+    $date_query = array();
+    if (!empty($data['date_from'])) {
+        $date_query['after'] = $data['date_from'];
+    }
+    if (!empty($data['date_to'])) {
+        $date_query['before'] = $data['date_to'];
+    }
+    return $date_query;
+}
 
 // Function to get total items to be deleted
-function amcd_get_total_items()
+function amcd_get_total_items($data)
 {
     $total = 0;
 
-    // Count posts (including custom post types)
-    $post_types = get_post_types(array('public' => true));
-    foreach ($post_types as $post_type) {
-        if (isset($_POST["delete_{$post_type}"]) || isset($_POST["delete_cpt_{$post_type}"])) {
-            $total += wp_count_posts($post_type)->publish;
+    if ($data['posts']) {
+        $total += wp_count_posts('post')->publish;
+    }
+
+    if ($data['pages']) {
+        $total += wp_count_posts('page')->publish;
+    }
+
+    if (!empty($data['cpt'])) {
+        foreach ($data['cpt'] as $pt) {
+            $total += wp_count_posts($pt)->publish;
         }
     }
 
-    // Count comments
-    if (isset($_POST['delete_comments'])) {
+    if ($data['comments']) {
         $total += wp_count_comments()->total_comments;
     }
 
-    // Count users
-    if (isset($_POST['delete_users'])) {
+    if ($data['users']) {
         $total += count_users()['total_users'] - 1; // Subtract 1 for admin
     }
 
-    // Count terms
-    if (isset($_POST['delete_terms'])) {
+    if ($data['terms']) {
         $taxonomies = get_taxonomies();
         foreach ($taxonomies as $taxonomy) {
             $total += wp_count_terms($taxonomy);
         }
     }
 
-    // Count media
-    if (isset($_POST['delete_media'])) {
+    if ($data['media']) {
         $total += wp_count_posts('attachment')->inherit;
     }
 
-    // Count WooCommerce items
     if (class_exists('WooCommerce')) {
-        if (isset($_POST['delete_products'])) {
+        if ($data['products']) {
             $total += wp_count_posts('product')->publish;
         }
-        if (isset($_POST['delete_orders'])) {
+
+        if ($data['orders']) {
             $total += wp_count_posts('shop_order')->publish;
         }
-        if (isset($_POST['delete_coupons'])) {
+
+        if ($data['coupons']) {
             $total += wp_count_posts('shop_coupon')->publish;
         }
     }
@@ -610,6 +654,7 @@ function amcd_ajax_export_data()
         fputcsv($fp, $csv_row);
     }
     fclose($fp);
+
     // Generate download URL
     $file_url = $upload_dir['url'] . '/' . $filename;
 
@@ -637,13 +682,6 @@ function amcd_schedule_deletion($timestamp, $data)
 
 function amcd_process_scheduled_deletion($data)
 {
-    // Process deletion based on $data
-    // This function will be called by WordPress cron
+    amcd_process_deletion($data);
 }
 add_action('amcd_scheduled_deletion', 'amcd_process_scheduled_deletion');
-
-// Add role-based access control
-function amcd_user_can_access()
-{
-    return current_user_can('manage_options'); // Adjust as needed
-}
