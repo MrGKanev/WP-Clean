@@ -4,18 +4,25 @@ class WP_Clean_Deletion
   public function __construct()
   {
     add_action('wp_ajax_wp_clean_process_deletion', array($this, 'process_deletion'));
+    error_log('WP-Clean: WP_Clean_Deletion constructor called, AJAX action hooked');
   }
 
   public function process_deletion()
   {
-    check_ajax_referer('wp_clean_nonce', 'nonce');
+    error_log('WP-Clean: process_deletion method called');
+    error_log('WP-Clean: POST data: ' . print_r($_POST, true));
 
-    if (!current_user_can('manage_options')) {
-      wp_send_json_error(__('You do not have sufficient permissions to perform this action.', 'wp-clean'));
+    if (!check_ajax_referer('wp_clean_nonce', 'nonce', false)) {
+      error_log('WP-Clean: Nonce verification failed');
+      wp_send_json_error('Nonce verification failed', 400);
+      return;
     }
 
-    error_log('WP-Clean: Starting deletion process');
-    error_log('WP-Clean: POST data: ' . print_r($_POST, true));
+    if (!current_user_can('manage_options')) {
+      error_log('WP-Clean: Insufficient permissions');
+      wp_send_json_error('Insufficient permissions', 400);
+      return;
+    }
 
     $deletion_data = $this->get_deletion_data();
     error_log('WP-Clean: Deletion data: ' . print_r($deletion_data, true));
