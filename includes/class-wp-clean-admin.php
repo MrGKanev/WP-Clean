@@ -29,7 +29,10 @@ class WP_Clean_Admin
     wp_enqueue_script('wp-clean-admin', WP_CLEAN_PLUGIN_URL . 'assets/js/wp-clean-admin.js', array('jquery'), WP_CLEAN_VERSION, true);
     wp_localize_script('wp-clean-admin', 'wpCleanAdmin', array(
       'ajax_url' => admin_url('admin-ajax.php'),
-      'nonce' => wp_create_nonce('wp_clean_nonce')
+      'nonce' => wp_create_nonce('wp_clean_nonce'),
+      'confirm_deletion' => __('Are you sure you want to delete the selected content? This action cannot be undone.', 'wp-clean'),
+      'ajax_error' => __('An error occurred. Please try again.', 'wp-clean'),
+      'deletion_complete' => __('Deletion process completed.', 'wp-clean')
     ));
   }
 

@@ -14,42 +14,62 @@ class WP_Clean_Deletion
       wp_send_json_error(__('You do not have sufficient permissions to perform this action.', 'wp-clean'));
     }
 
+    error_log('WP-Clean: Starting deletion process');
+    error_log('WP-Clean: POST data: ' . print_r($_POST, true));
+
     $deletion_data = $this->get_deletion_data();
+    error_log('WP-Clean: Deletion data: ' . print_r($deletion_data, true));
+
     $deleted_items = 0;
     $total_items = $this->get_total_items($deletion_data);
+    error_log('WP-Clean: Total items to delete: ' . $total_items);
 
     // Process posts
     if ($deletion_data['posts']) {
-      $deleted_items += $this->delete_posts($deletion_data);
+      $deleted_posts = $this->delete_posts($deletion_data);
+      error_log('WP-Clean: Deleted posts: ' . $deleted_posts);
+      $deleted_items += $deleted_posts;
     }
 
     // Process pages
     if ($deletion_data['pages']) {
-      $deleted_items += $this->delete_pages($deletion_data);
+      $deleted_pages = $this->delete_pages($deletion_data);
+      error_log('WP-Clean: Deleted pages: ' . $deleted_pages);
+      $deleted_items += $deleted_pages;
     }
 
     // Process comments
     if ($deletion_data['comments']) {
-      $deleted_items += $this->delete_comments($deletion_data);
+      $deleted_comments = $this->delete_comments($deletion_data);
+      error_log('WP-Clean: Deleted comments: ' . $deleted_comments);
+      $deleted_items += $deleted_comments;
     }
 
     // Process users
     if ($deletion_data['users']) {
-      $deleted_items += $this->delete_users();
+      $deleted_users = $this->delete_users();
+      error_log('WP-Clean: Deleted users: ' . $deleted_users);
+      $deleted_items += $deleted_users;
     }
 
     // Process terms
     if ($deletion_data['terms']) {
-      $deleted_items += $this->delete_terms();
+      $deleted_terms = $this->delete_terms();
+      error_log('WP-Clean: Deleted terms: ' . $deleted_terms);
+      $deleted_items += $deleted_terms;
     }
 
     // Process media
     if ($deletion_data['media']) {
-      $deleted_items += $this->delete_media($deletion_data);
+      $deleted_media = $this->delete_media($deletion_data);
+      error_log('WP-Clean: Deleted media: ' . $deleted_media);
+      $deleted_items += $deleted_media;
     }
 
     $progress = ($total_items > 0) ? round(($deleted_items / $total_items) * 100) : 100;
     $message = sprintf(__('Deleted %1$d out of %2$d items', 'wp-clean'), $deleted_items, $total_items);
+
+    error_log('WP-Clean: Deletion process completed. Progress: ' . $progress . '%, Message: ' . $message);
 
     wp_send_json_success(array('progress' => $progress, 'message' => $message));
   }
@@ -57,12 +77,12 @@ class WP_Clean_Deletion
   private function get_deletion_data()
   {
     return array(
-      'posts' => isset($_POST['delete_posts']),
-      'pages' => isset($_POST['delete_pages']),
-      'comments' => isset($_POST['delete_comments']),
-      'users' => isset($_POST['delete_users']),
-      'terms' => isset($_POST['delete_terms']),
-      'media' => isset($_POST['delete_media']),
+      'posts' => isset($_POST['delete_posts']) && $_POST['delete_posts'] === '1',
+      'pages' => isset($_POST['delete_pages']) && $_POST['delete_pages'] === '1',
+      'comments' => isset($_POST['delete_comments']) && $_POST['delete_comments'] === '1',
+      'users' => isset($_POST['delete_users']) && $_POST['delete_users'] === '1',
+      'terms' => isset($_POST['delete_terms']) && $_POST['delete_terms'] === '1',
+      'media' => isset($_POST['delete_media']) && $_POST['delete_media'] === '1',
       'date_from' => sanitize_text_field($_POST['date_from'] ?? ''),
       'date_to' => sanitize_text_field($_POST['date_to'] ?? ''),
     );
