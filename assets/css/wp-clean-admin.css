@@ -1,0 +1,40 @@
+.wp-clean-progress-bar {
+  width: 100%;
+  background-color: #f0f0f0;
+  padding: 3px;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+  margin-top: 20px;
+}
+
+.wp-clean-progress-bar-inner {
+  width: 0;
+  height: 20px;
+  background-color: #0073aa;
+  border-radius: 3px;
+  transition: width 0.5s ease-in-out;
+}
+
+.wp-clean-form-section {
+  margin-bottom: 20px;
+}
+
+.wp-clean-form-section h3 {
+  margin-bottom: 10px;
+}
+
+.wp-clean-checkbox-list {
+  column-count: 2;
+  column-gap: 20px;
+}
+
+.wp-clean-checkbox-list label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.wp-clean-date-range {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
