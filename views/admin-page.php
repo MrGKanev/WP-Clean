@@ -1,5 +1,5 @@
 <div class="wrap">
-  <h1><?php echo esc_html__('WP-Clean: WordPress Content Cleanup and Database Optimization', 'wp-clean'); ?></h1>
+  <h1><?php echo esc_html__('WP-Clean: WordPress and WooCommerce Content Cleanup', 'wp-clean'); ?></h1>
 
   <form method="post" action="" id="wp-clean-form">
     <?php wp_nonce_field('wp_clean_nonce', 'wp_clean_nonce'); ?>
@@ -13,20 +13,14 @@
         <label><input type="checkbox" name="delete_users" value="1"> <?php echo esc_html__('Users (except admin)', 'wp-clean'); ?></label>
         <label><input type="checkbox" name="delete_terms" value="1"> <?php echo esc_html__('Terms (categories, tags)', 'wp-clean'); ?></label>
         <label><input type="checkbox" name="delete_media" value="1"> <?php echo esc_html__('Media', 'wp-clean'); ?></label>
-      </div>
-    </div>
-
-    <div class="wp-clean-form-section">
-      <h3><?php echo esc_html__('Date Range (optional)', 'wp-clean'); ?></h3>
-      <div class="wp-clean-date-range">
-        <label><?php echo esc_html__('From:', 'wp-clean'); ?> <input type="date" name="date_from"></label>
-        <label><?php echo esc_html__('To:', 'wp-clean'); ?> <input type="date" name="date_to"></label>
+        <label><input type="checkbox" name="delete_wc_products" value="1"> <?php echo esc_html__('WooCommerce Products', 'wp-clean'); ?></label>
+        <label><input type="checkbox" name="delete_wc_orders" value="1"> <?php echo esc_html__('WooCommerce Orders', 'wp-clean'); ?></label>
+        <label><input type="checkbox" name="delete_wc_coupons" value="1"> <?php echo esc_html__('WooCommerce Coupons', 'wp-clean'); ?></label>
       </div>
     </div>
 
     <div class="wp-clean-form-section">
       <input type="submit" name="wp_clean_submit" id="wp-clean-submit" class="button button-primary" value="<?php echo esc_attr__('Delete Selected Content', 'wp-clean'); ?>">
-      <input type="submit" name="wp_clean_export" id="wp-clean-export" class="button" value="<?php echo esc_attr__('Export Before Delete', 'wp-clean'); ?>">
     </div>
   </form>
 
