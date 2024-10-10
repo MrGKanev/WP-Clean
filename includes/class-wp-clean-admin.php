@@ -1,4 +1,5 @@
 <?php
+
 class WP_Clean_Admin
 {
   public function init()
@@ -25,8 +26,16 @@ class WP_Clean_Admin
       return;
     }
 
+    // Enqueue WordPress dashicons for our tooltip icons
+    wp_enqueue_style('dashicons');
+
+    // Enqueue our custom CSS
     wp_enqueue_style('wp-clean-admin', WP_CLEAN_PLUGIN_URL . 'assets/css/wp-clean-admin.css', array(), WP_CLEAN_VERSION);
+
+    // Enqueue our custom JavaScript
     wp_enqueue_script('wp-clean-admin', WP_CLEAN_PLUGIN_URL . 'assets/js/wp-clean-admin.js', array('jquery'), WP_CLEAN_VERSION, true);
+
+    // Localize script with our data
     wp_localize_script('wp-clean-admin', 'wpCleanAdmin', array(
       'ajax_url' => admin_url('admin-ajax.php'),
       'nonce' => wp_create_nonce('wp_clean_nonce'),
